@@ -74,7 +74,7 @@ async function fetchMachineseeker(query, debug) {
   }
 
   const html = await response.text();
-  if (debug) return { _html: html.substring(0, 3000) };
+  if (debug) return { _html: html.substring(0, 8000), _htmlLength: html.length };
   return parseMachineseekerHTML(html, query);
 }
 
