@@ -1,3 +1,4 @@
+// ForkFlip Proxy Worker v1.0 — deployed via GitHub Actions
 /**
  * ForkFlip Proxy Worker
  * Fetcht machineseeker.nl zoekresultaten en geeft JSON terug.
