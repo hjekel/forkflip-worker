@@ -74,7 +74,23 @@ async function fetchMachineseeker(query, debug) {
   }
 
   const html = await response.text();
-  if (debug) return { _html: html.substring(0, 8000), _htmlLength: html.length };
+  if (debug) {
+    // Show different parts of the HTML
+    return {
+      _htmlLength: html.length,
+      _head: html.substring(0, 2000),
+      _middle: html.substring(Math.floor(html.length/3), Math.floor(html.length/3) + 3000),
+      _hasArticle: html.includes('<article'),
+      _hasEuro: html.includes('EUR') || html.includes('\u20ac'),
+      _hasListingClass: html.includes('listing') || html.includes('result') || html.includes('offer'),
+      _sampleAroundEuro: (function() {
+        var i = html.indexOf('EUR');
+        if (i < 0) i = html.indexOf('\u20ac');
+        if (i < 0) return 'No EUR/euro found';
+        return html.substring(Math.max(0, i-200), i+200);
+      })()
+    };
+  }
   return parseMachineseekerHTML(html, query);
 }
 
