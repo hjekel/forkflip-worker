@@ -31,16 +31,20 @@ export default {
       );
     }
 
+    const debug = url.searchParams.get('debug') === '1';
+
     try {
-      const results = await fetchMachineseeker(query.trim());
+      const results = await fetchMachineseeker(query.trim(), debug);
+      const response_data = {
+        query: query.trim(),
+        source: 'machineseeker',
+        country: 'NL',
+        results: debug ? [] : results,
+        count: debug ? 0 : results.length
+      };
+      if (debug && results._html) response_data.htmlSample = results._html;
       return new Response(
-        JSON.stringify({
-          query: query.trim(),
-          source: 'machineseeker',
-          country: 'NL',
-          results,
-          count: results.length
-        }),
+        JSON.stringify(response_data),
         { headers: corsHeaders }
       );
     } catch (err) {
@@ -52,7 +56,7 @@ export default {
   }
 };
 
-async function fetchMachineseeker(query) {
+async function fetchMachineseeker(query, debug) {
   const q = encodeURIComponent(query);
   const searchUrl = `https://www.machineseeker.nl/main/search/index?search-word=${q}`;
 
@@ -70,6 +74,7 @@ async function fetchMachineseeker(query) {
   }
 
   const html = await response.text();
+  if (debug) return { _html: html.substring(0, 3000) };
   return parseMachineseekerHTML(html, query);
 }
 
