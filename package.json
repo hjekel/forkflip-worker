@@ -1,0 +1,12 @@
+{
+  "name": "forkflip-worker",
+  "version": "1.0.0",
+  "description": "ForkFlip Cloudflare Worker proxy for live equipment search",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
