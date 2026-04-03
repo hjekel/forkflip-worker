@@ -74,9 +74,71 @@ async function searchViaTavily(query, apiKey) {
   const data = await response.json();
   if (!data.results || data.results.length === 0) return [];
 
-  return data.results
+  // FIX 1: Deduplicatie op URL
+  const seen = new Set();
+  const unique = data.results.filter(r => {
+    if (!r.url || seen.has(r.url)) return false;
+    seen.add(r.url);
+    return true;
+  });
+
+  const listings = unique
     .filter(r => r.url && r.title)
     .map((r, i) => normalizeTavilyResult(r, query, i));
+
+  // FIX 2: Prijs enrichment — haal eerste 5 pagina's parallel op
+  const enriched = await Promise.all(
+    listings.slice(0, 5).map(l => enrichWithPrice(l))
+  );
+  const rest = listings.slice(5);
+  return [...enriched, ...rest];
+}
+
+// FIX 2: Prijs + foto ophalen van listing pagina
+async function enrichWithPrice(listing) {
+  if (!listing.source_url || listing.price > 0) return listing;
+  try {
+    const resp = await fetch(listing.source_url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html', 'Accept-Language': 'nl-NL,nl;q=0.9'
+      },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (!resp.ok) return listing;
+    const html = await resp.text();
+    // Prijs
+    for (const p of [/itemprop="price"[^>]*content="([\d.,]+)"/i, /"price"\s*:\s*"?([\d.,]+)/i,
+      /class="[^"]*price[^"]*"[^>]*>[^<]*?(\d[\d.,]+)\s*(?:EUR|\u20ac)/i,
+      /(\d{1,3}(?:\.\d{3})+)\s*(?:EUR|\u20ac)/]) {
+      const m = html.match(p);
+      if (m) {
+        const val = Math.round(parseFloat(m[1].replace(/\./g, '').replace(',', '.')));
+        if (val >= 200 && val <= 2000000) { listing.price = val; break; }
+      }
+    }
+    // Foto
+    for (const p of [/og:image"[^>]*content="([^"]+)"/i, /itemprop="image"[^>]*(?:src|content)="([^"]+)"/i]) {
+      const m = html.match(p);
+      if (m && m[1].startsWith('http')) { listing.image_url = m[1]; break; }
+    }
+  } catch (e) { /* stille fail */ }
+  return listing;
+}
+
+// FIX 4: Strip Machineseeker ruis uit modelnaam
+function cleanExternalModel(model) {
+  return model
+    .replace(/gebruikt\s+te\s+koop[^$]*/gi, '')
+    .replace(/te\s+koop[^$]*/gi, '')
+    .replace(/tweedehands\s+te\s+koop[^$]*/gi, '')
+    .replace(/tweedehands[^$]*/gi, '')
+    .replace(/op\s+machineseeker[^$]*/gi, '')
+    .replace(/machineseeker\s*nl/gi, '')
+    .replace(/[-\u2013\u2014]\s*machineseeker.*/gi, '')
+    .replace(/\|\s*.*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function normalizeTavilyResult(result, query, index) {
@@ -88,7 +150,8 @@ function normalizeTavilyResult(result, query, index) {
   const year = extractYear(combined);
   const hours = extractHours(content);
   const region = extractRegion(content) || 'NL';
-  const { brand, model } = splitTitle(title);
+  const { brand, model: rawModel } = splitTitle(title);
+  const model = cleanExternalModel(rawModel);
 
   return {
     id: `tavily_${Date.now()}_${index}`,
