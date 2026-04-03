@@ -150,8 +150,24 @@ function normalizeTavilyResult(result, query, index) {
   const year = extractYear(combined);
   const hours = extractHours(content);
   const region = extractRegion(content) || 'NL';
-  const { brand, model: rawModel } = splitTitle(title);
-  const model = cleanExternalModel(rawModel);
+
+  // Try title first, then fall back to query for brand/model
+  let { brand, model: rawModel } = splitTitle(title);
+  let model = cleanExternalModel(rawModel);
+
+  // If brand is generic (not a real equipment brand), use query
+  const genericWords = ['hoogwerker','heftruck','forklift','schaarlift','verreiker',
+    'palletwagen','machine','tweedehands','gebruikt','koop','zoek','alle','advertenties'];
+  if (genericWords.includes(brand.toLowerCase()) || brand === '\u2014' || brand.length < 2) {
+    const fromQuery = splitTitle(query);
+    if (!genericWords.includes(fromQuery.brand.toLowerCase())) {
+      brand = fromQuery.brand;
+    }
+  }
+  // If model is empty or generic, try cleaned title
+  if (!model || model === '\u2014' || model.length < 2) {
+    model = cleanExternalModel(title) || query;
+  }
 
   return {
     id: `tavily_${Date.now()}_${index}`,
