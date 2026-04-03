@@ -171,9 +171,16 @@ function normalizeTavilyResult(result, query, index) {
     if (genericWords.includes(model.toLowerCase())) model = query;
   }
 
+  // Remove brand prefix from model if duplicated
+  let finalModel = model;
+  if (finalModel.toLowerCase().startsWith(brand.toLowerCase())) {
+    finalModel = finalModel.substring(brand.length).trim();
+  }
+  if (!finalModel || finalModel.length < 2) finalModel = model;
+
   return {
     id: `tavily_${Date.now()}_${index}`,
-    brand, model,
+    brand, model: finalModel,
     fullTitle: title,
     price, year, hours,
     condition: '\u2014', region,
