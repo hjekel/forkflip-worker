@@ -165,8 +165,10 @@ function normalizeTavilyResult(result, query, index) {
     }
   }
   // If model is empty or generic, try cleaned title
-  if (!model || model === '\u2014' || model.length < 2) {
+  if (!model || model === '\u2014' || model.length < 2 || genericWords.includes(model.toLowerCase())) {
     model = cleanExternalModel(title) || query;
+    // Still generic? Skip this result
+    if (genericWords.includes(model.toLowerCase())) model = query;
   }
 
   return {
