@@ -57,6 +57,12 @@ export default {
 };
 
 async function fetchMachineseeker(query, debug) {
+  // Machineseeker is JS-rendered — no JSON API available.
+  // Server-side HTML contains no listing data.
+  // Returning empty array → frontend shows marketplace links as fallback.
+  // TODO Phase 2: use headless browser (Puppeteer/Playwright) or partner API.
+  return [];
+
   const q = encodeURIComponent(query);
   const searchUrl = `https://www.machineseeker.nl/main/search/index?search-word=${q}`;
 
