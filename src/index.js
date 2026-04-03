@@ -36,8 +36,17 @@ export default {
 
     try {
       const results = await searchViaTavily(query.trim(), env.TAVILY_API_KEY);
+      const pricesFound = results.filter(l => l.price > 0).length;
       return new Response(
-        JSON.stringify({ query: query.trim(), source: 'machineseeker', country: 'NL', results, count: results.length }),
+        JSON.stringify({
+          query: query.trim(), source: 'machineseeker', country: 'NL',
+          results, count: results.length,
+          meta: {
+            pricesFound,
+            marketMedian: results[0]?.marketAvg || 0,
+            note: `Potentie berekend op basis van ${pricesFound} live prijzen`
+          }
+        }),
         { headers: corsHeaders }
       );
     } catch (err) {
@@ -91,7 +100,36 @@ async function searchViaTavily(query, apiKey) {
     listings.slice(0, 5).map(l => enrichWithPrice(l))
   );
   const rest = listings.slice(5);
-  return [...enriched, ...rest];
+  const allListings = [...enriched, ...rest];
+
+  // V22: Gaspedaal prijsanalyse
+  return calculateLivePotential(allListings);
+}
+
+function calculateLivePotential(listings) {
+  const prices = listings.map(l => l.price).filter(p => p > 0);
+
+  if (prices.length < 2) {
+    return listings.map(l => ({ ...l, marketAvg: 0, estimatedResale: 0, potentialNote: 'Onvoldoende prijsdata' }));
+  }
+
+  const sorted = [...prices].sort((a, b) => a - b);
+  const median = sorted.length % 2 === 0
+    ? Math.round((sorted[sorted.length/2 - 1] + sorted[sorted.length/2]) / 2)
+    : sorted[Math.floor(sorted.length/2)];
+
+  return listings.map(l => {
+    if (l.price <= 0) {
+      return { ...l, marketAvg: median, estimatedResale: 0, potentialNote: 'Prijs onbekend' };
+    }
+    const pctDiff = Math.round(((median - l.price) / median) * 100);
+    return {
+      ...l,
+      marketAvg: median,
+      estimatedResale: median,
+      potentialNote: `${pctDiff > 0 ? '+' : ''}${pctDiff}% vs. ${prices.length} live listings`
+    };
+  });
 }
 
 // FIX 2: Prijs + foto ophalen van listing pagina
