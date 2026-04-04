@@ -58,7 +58,39 @@ export default {
   }
 };
 
+// FIX 1: Filter category-pagina's en generieke zoekpagina's
+function isSpecificListing(result) {
+  const url = (result.url || '').toLowerCase();
+  const title = (result.title || '').toLowerCase();
+
+  // Blokkeer: category index URLs
+  if (url.includes('/ci-')) return false;
+
+  // Blokkeer: generieke zoektermen als title
+  const genericTitles = ['gebruikt kopen', 'tweedehands te koop (',
+    'bij machineseeker', 'hoogwerkers gebruikt', 'heftrucks gebruikt',
+    'advertenties van', 'alle categorien'];
+  for (const t of genericTitles) {
+    if (title.includes(t)) return false;
+  }
+
+  // Blokkeer: title bevat grote aantallen (category overzichten)
+  if (title.match(/\(\d{3,}\)/)) return false;
+
+  // Blokkeer: generieke /mss/ URLs zonder model
+  const mssMatch = url.match(/\/mss\/([^/?]+)/);
+  if (mssMatch) {
+    const term = decodeURIComponent(mssMatch[1]).toLowerCase().replace(/\+/g, ' ');
+    const genericMss = ['hoogwerker', 'heftruck', 'verreiker', 'machine',
+      'scissor', 'platform', 'forklift', 'lift', 'stapelaar'];
+    if (genericMss.includes(term)) return false;
+  }
+
+  return true;
+}
+
 async function searchViaTavily(query, apiKey) {
+  // FIX 3: "te koop" toevoegen voor specifiekere resultaten
   const response = await fetch('https://api.tavily.com/search', {
     method: 'POST',
     headers: {
@@ -66,11 +98,11 @@ async function searchViaTavily(query, apiKey) {
       'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      query: `site:machineseeker.nl ${query}`,
+      query: `site:machineseeker.nl ${query} te koop`,
       search_depth: 'advanced',
       include_answer: false,
       include_raw_content: false,
-      max_results: 10,
+      max_results: 15,
       include_domains: ['machineseeker.nl', 'www.machineseeker.nl']
     })
   });
@@ -83,7 +115,7 @@ async function searchViaTavily(query, apiKey) {
   const data = await response.json();
   if (!data.results || data.results.length === 0) return [];
 
-  // FIX 1: Deduplicatie op URL
+  // Deduplicatie op URL
   const seen = new Set();
   const unique = data.results.filter(r => {
     if (!r.url || seen.has(r.url)) return false;
@@ -91,8 +123,13 @@ async function searchViaTavily(query, apiKey) {
     return true;
   });
 
-  const listings = unique
+  // FIX 1: Filter category-pagina's eruit
+  const specific = unique.filter(isSpecificListing);
+  const toProcess = specific.length >= 3 ? specific : unique;
+
+  const listings = toProcess
     .filter(r => r.url && r.title)
+    .slice(0, 10)
     .map((r, i) => normalizeTavilyResult(r, query, i));
 
   // FIX 2: Prijs enrichment — haal eerste 5 pagina's parallel op
@@ -107,7 +144,11 @@ async function searchViaTavily(query, apiKey) {
 }
 
 function calculateLivePotential(listings) {
-  const prices = listings.map(l => l.price).filter(p => p > 0);
+  // FIX 2: Filter placeholder prijzen uit mediaan
+  const PLACEHOLDERS = [4950, 4900, 1, 0];
+  const validPrices = listings.map(l => l.price).filter(p => p > 0 && !PLACEHOLDERS.includes(p));
+  const allPrices = listings.map(l => l.price).filter(p => p > 0);
+  const prices = validPrices.length >= 2 ? validPrices : allPrices;
 
   if (prices.length < 2) {
     return listings.map(l => ({ ...l, marketAvg: 0, estimatedResale: 0, potentialNote: 'Onvoldoende prijsdata' }));
@@ -119,6 +160,10 @@ function calculateLivePotential(listings) {
     : sorted[Math.floor(sorted.length/2)];
 
   return listings.map(l => {
+    // Markeer placeholder prijzen
+    if (PLACEHOLDERS.includes(l.price)) {
+      return { ...l, price: 0, marketAvg: median, estimatedResale: 0, potentialNote: 'Prijs op aanvraag' };
+    }
     if (l.price <= 0) {
       return { ...l, marketAvg: median, estimatedResale: 0, potentialNote: 'Prijs onbekend' };
     }
@@ -127,7 +172,7 @@ function calculateLivePotential(listings) {
       ...l,
       marketAvg: median,
       estimatedResale: median,
-      potentialNote: `${pctDiff > 0 ? '+' : ''}${pctDiff}% vs. ${prices.length} live listings`
+      potentialNote: `${pctDiff > 0 ? '+' : ''}${pctDiff}% vs. ${prices.length} live prijzen`
     };
   });
 }
